@@ -1,0 +1,57 @@
+[[override]]
+  branch = "master"
+  name = "github.com/operator-framework/helm-app-operator-kit"
+
+[[override]]
+  name = "k8s.io/kubernetes"
+  # branch = "release-1.9"
+  revision = "2facc7de3d8213345a7d47ec77204b2e776727f0"
+
+[[override]]
+  name = "k8s.io/api"
+  # revision for tag "kubernetes-1.9.3"
+  revision = "acf347b865f29325eb61f4cd2df11e86e073a5ee"
+
+[[override]]
+  name = "k8s.io/apimachinery"
+  # revision for tag "kubernetes-1.9.3"
+  revision = "19e3f5aa3adca672c153d324e6b7d82ff8935f03"
+
+[[override]]
+  name = "github.com/russross/blackfriday"
+  branch = "master"
+
+[[override]]
+  name = "github.com/docker/distribution"
+  branch = "master"
+
+[[override]]
+  name = "github.com/docker/docker"
+  branch = "master"
+
+[[override]]
+  name = "github.com/Azure/go-autorest"
+  version = "v9.8.1"
+
+[[override]]
+  name = "k8s.io/apiserver"
+  revision = "16f07649a010bed64bb9c7986bd9988f68ce0421"
+
+[[override]]
+  name = "k8s.io/client-go"
+  # version = "v6.0.0"
+  revision = "78700dec6369ba22221b72770783300f143df150"
+
+[[override]]
+  name = "github.com/operator-framework/operator-sdk"
+  # The version rule is used for a specific release and the master branch for in between releases.
+  branch = "master"
+  # version = "=v0.0.5"
+
+[[override]]
+  name = "k8s.io/helm"
+  revision = "6af75a8fd72e2aa18a2b278cfe5c7a1c5feca7f2"
+
+[prune]
+  go-tests = true
+  unused-packages = true
