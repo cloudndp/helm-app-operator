@@ -89,11 +89,10 @@ var lastResourceVersion string
 func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch o := event.Object.(type) {
 	case *v1alpha1.HelmApp:
-		if o.GetResourceVersion() == lastResourceVersion {
+		if o.GetResourceVersion() == lastResourceVersion && !event.Deleted {
 			// skipping because resource version has not changed
 			return nil
 		}
-
 		logger.Printf("processing %s", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
 
 		if event.Deleted {
