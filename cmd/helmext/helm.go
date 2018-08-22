@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	yaml "gopkg.in/yaml.v2"
@@ -66,7 +64,6 @@ func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error
 	if err != nil {
 		return r, err
 	}
-	logrus.Infof("using values: %s", string(cr))
 
 	chart, err := chartutil.Load(c.chartPath)
 	if err != nil {
@@ -85,6 +82,7 @@ func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error
 			Name:      c.behavior.ReleaseName(r),
 			Chart:     chart,
 			Values:    &cpb.Config{Raw: string(cr)},
+			ReuseName: c.behavior.OptionForce(r),
 		}
 		releaseResponse, err := tiller.InstallRelease(context.TODO(), installReq)
 		if err != nil {

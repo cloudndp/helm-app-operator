@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -86,13 +89,44 @@ type handler struct {
 func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch o := event.Object.(type) {
 	case *v1alpha1.HelmApp:
-		if event.Deleted {
-			logger.Printf("Uninstalling %s", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
-			_, err := h.controller.UninstallRelease(o)
-			if err != nil {
-				logger.Fatalf("failed to uninstall release: %v", err.Error())
+		finalizerFound, finalizerRemains := false, []string{}
+		for _, v := range o.GetFinalizers() {
+			if v == helmext.OperatorName() {
+				finalizerFound = true
+			} else {
+				finalizerRemains = append(finalizerRemains, v)
 			}
+		}
+		if event.Deleted || o.GetDeletionTimestamp() != nil {
+			if finalizerFound {
+				logger.Printf("Uninstalling %s", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
+				updatedResource, err := h.controller.UninstallRelease(o)
+				if err != nil {
+					if strings.Contains(err.Error(), "not found") {
+						logger.Printf("%s already uninstalled", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
+						return nil
+					}
+					logger.Fatalf("failed to uninstall release: %v", err.Error())
+					return err
+				}
+				if !event.Deleted {
+					updatedResource.SetFinalizers(finalizerRemains)
+					err = sdk.Update(updatedResource)
+					if err != nil {
+						logger.Fatalf("failed to update custom resource status: %v", err.Error())
+						return err
+					}
+				}
+				logger.Printf("%s uninstalled", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
+			}
+			return nil
+		}
+		if updated, err := updateChecksum(o); err != nil {
+			logger.Fatalf("failed to update checksum: %v", err.Error())
 			return err
+		} else if !updated {
+			//unchanged, continue
+			return nil
 		}
 		logger.Printf("Installing %s", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
 		updatedResource, err := h.controller.InstallRelease(o)
@@ -100,11 +134,15 @@ func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 			logger.Fatalf("failed to install release: %v", err.Error())
 			return err
 		}
+		if !finalizerFound {
+			updatedResource.SetFinalizers(append(finalizerRemains, helmext.OperatorName()))
+		}
 		err = sdk.Update(updatedResource)
 		if err != nil {
 			logger.Fatalf("failed to update custom resource status: %v", err.Error())
 			return err
 		}
+		logger.Printf("%s updated", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
 	}
 	return nil
 }
@@ -216,4 +254,34 @@ func uninstallCRDResource(resource string) error {
 		return err
 	}
 	return nil
+}
+
+func updateChecksum(r *v1alpha1.HelmApp) (bool, error) {
+	annoChecksum := helmext.OptionAnnotation("checksum")
+	annotations, lastChecksum := map[string]string{}, ""
+	for k, v := range r.GetAnnotations() {
+		if k == annoChecksum {
+			lastChecksum = v
+		} else {
+			annotations[k] = v
+		}
+	}
+	bytes, err := json.Marshal([]interface{}{
+		r.GetName(),
+		r.GetNamespace(),
+		r.GetLabels(),
+		annotations,
+		r.Spec,
+		r.GetDeletionTimestamp(),
+	})
+	if err != nil {
+		return false, err
+	}
+	checksum := fmt.Sprintf("%x", sha1.Sum(bytes))
+	if checksum != lastChecksum {
+		annotations[annoChecksum] = checksum
+		r.SetAnnotations(annotations)
+		return true, nil
+	}
+	return false, nil
 }
