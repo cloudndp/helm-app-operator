@@ -4,18 +4,41 @@
 
 [[override]]
   name = "k8s.io/kubernetes"
-  # branch = "release-1.9"
-  revision = "2facc7de3d8213345a7d47ec77204b2e776727f0"
+  # version = "release-1.9"
+  # revision = "2facc7de3d8213345a7d47ec77204b2e776727f0"
+  # version = "=v1.10.7"
+  revision = "0c38c362511b20a098d7cd855f1314dad92c2780"
 
 [[override]]
   name = "k8s.io/api"
   # revision for tag "kubernetes-1.9.3"
-  revision = "acf347b865f29325eb61f4cd2df11e86e073a5ee"
+  # revision = "acf347b865f29325eb61f4cd2df11e86e073a5ee"
+  # version = "=v1.10.7"
+  revision = "0f11257a8a25954878633ebdc9841c67d8f83bdb"
 
 [[override]]
   name = "k8s.io/apimachinery"
   # revision for tag "kubernetes-1.9.3"
-  revision = "19e3f5aa3adca672c153d324e6b7d82ff8935f03"
+  # revision = "19e3f5aa3adca672c153d324e6b7d82ff8935f03"
+  # version = "=kubernetes-1.10.7"
+  revision = "e386b2658ed20923da8cc9250e552f082899a1ee"
+
+[[override]]
+  name = "k8s.io/apiextensions-apiserver"
+  # version = "=kubernetes-1.10.7"
+  revision = "f775fcd59f5c64e13850b231ea55132cfd5707c6"
+
+[[override]]
+  name = "k8s.io/apiserver"
+  # version = "=kubernetes-1.10.7"
+  revision = "350f23162361593622405c01a5273b759be18324"
+  
+[[override]]
+  name = "k8s.io/client-go"
+  # version = "v6.0.0"
+  # revision = "78700dec6369ba22221b72770783300f143df150"
+  # version = "=kubernetes-1.10.7"
+  revision = "745ca830039794f7b927b8a2c2a58dcc1e8a0a72"
 
 [[override]]
   name = "github.com/russross/blackfriday"
@@ -34,15 +57,6 @@
   version = "v9.8.1"
 
 [[override]]
-  name = "k8s.io/apiserver"
-  revision = "16f07649a010bed64bb9c7986bd9988f68ce0421"
-
-[[override]]
-  name = "k8s.io/client-go"
-  # version = "v6.0.0"
-  revision = "78700dec6369ba22221b72770783300f143df150"
-
-[[override]]
   name = "github.com/operator-framework/operator-sdk"
   # The version rule is used for a specific release and the master branch for in between releases.
   branch = "master"
@@ -50,7 +64,7 @@
 
 [[override]]
   name = "k8s.io/helm"
-  revision = "6af75a8fd72e2aa18a2b278cfe5c7a1c5feca7f2"
+  version = "=v2.10.0"
 
 [prune]
   go-tests = true

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright The Helm Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ func (c *Client) waitForResources(timeout time.Duration, created Result) error {
 		pvc := []v1.PersistentVolumeClaim{}
 		deployments := []deployment{}
 		for _, v := range created {
-			obj, err := c.AsVersionedObject(v.Object)
+			obj, err := v.Versioned()
 			if err != nil && !runtime.IsNotRegisteredError(err) {
 				return false, err
 			}
