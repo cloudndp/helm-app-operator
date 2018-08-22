@@ -42,21 +42,31 @@ type installer struct {
 	storageBackend   *storage.Storage
 	tillerKubeClient *kube.Client
 	chartPath        string
+	behavior         InstallerBehavior
 }
 
 // NewInstaller returns a new Helm installer capable of installing and uninstalling releases.
 func NewInstaller(storageBackend *storage.Storage, tillerKubeClient *kube.Client, chartPath string) Installer {
-	return installer{storageBackend, tillerKubeClient, chartPath}
+	return NewInstallerWithBehavior(storageBackend, tillerKubeClient, chartPath, installerBehavior{})
+}
+
+// NewInstallerWithBehavior returns a new Helm installer capable of installing and uninstalling releases.
+func NewInstallerWithBehavior(storageBackend *storage.Storage, tillerKubeClient *kube.Client, chartPath string, behavior InstallerBehavior) Installer {
+	return installer{storageBackend, tillerKubeClient, chartPath, behavior}
 }
 
 // InstallRelease accepts a custom resource, installs a Helm release using Tiller,
 // and returns the custom resource with updated `status`.
 func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error) {
-	cr, err := valuesFromResource(r)
-	logrus.Infof("using values: %s", string(cr))
+	values, err := c.behavior.ReleaseValues(r)
 	if err != nil {
 		return r, err
 	}
+	cr, err := yaml.Marshal(values)
+	if err != nil {
+		return r, err
+	}
+	logrus.Infof("using values: %s", string(cr))
 
 	chart, err := chartutil.Load(c.chartPath)
 	if err != nil {
@@ -64,7 +74,7 @@ func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error
 	}
 
 	var updatedRelease *release.Release
-	latestRelease, err := c.storageBackend.Last(ReleaseName(r))
+	latestRelease, err := c.storageBackend.Last(c.behavior.ReleaseName(r))
 
 	tiller := tillerRendererForCR(r, c.storageBackend, c.tillerKubeClient)
 	c.syncReleaseStatus(r.Status)
@@ -72,7 +82,7 @@ func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error
 	if err != nil || latestRelease == nil {
 		installReq := &services.InstallReleaseRequest{
 			Namespace: r.GetNamespace(),
-			Name:      ReleaseName(r),
+			Name:      c.behavior.ReleaseName(r),
 			Chart:     chart,
 			Values:    &cpb.Config{Raw: string(cr)},
 		}
@@ -83,10 +93,10 @@ func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error
 		updatedRelease = releaseResponse.GetRelease()
 	} else {
 		updateReq := &services.UpdateReleaseRequest{
-			Name:   ReleaseName(r),
+			Name:   c.behavior.ReleaseName(r),
 			Chart:  chart,
 			Values: &cpb.Config{Raw: string(cr)},
-			Force:  ReleaseOptionBool(r, OptionForce, false),
+			Force:  c.behavior.OptionForce(r),
 		}
 		releaseResponse, err := tiller.UpdateRelease(context.TODO(), updateReq)
 		if err != nil {
@@ -107,7 +117,7 @@ func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error
 func (c installer) UninstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error) {
 	tiller := tillerRendererForCR(r, c.storageBackend, c.tillerKubeClient)
 	_, err := tiller.UninstallRelease(context.TODO(), &services.UninstallReleaseRequest{
-		Name:  ReleaseName(r),
+		Name:  c.behavior.ReleaseName(r),
 		Purge: true,
 	})
 	if err != nil {
@@ -188,6 +198,23 @@ func ReleaseName(r *v1alpha1.HelmApp) string {
 	return fmt.Sprintf("%s-%s", OperatorName(), r.GetName())
 }
 
-func valuesFromResource(r *v1alpha1.HelmApp) ([]byte, error) {
-	return yaml.Marshal(r.Spec)
+//InstallerBehavior installer customized behavior
+type InstallerBehavior interface {
+	ReleaseName(r *v1alpha1.HelmApp) string
+	ReleaseValues(r *v1alpha1.HelmApp) (map[string]interface{}, error)
+	OptionForce(r *v1alpha1.HelmApp) bool
+}
+
+type installerBehavior struct{}
+
+func (c installerBehavior) ReleaseName(r *v1alpha1.HelmApp) string {
+	return ReleaseName(r)
+}
+
+func (c installerBehavior) ReleaseValues(r *v1alpha1.HelmApp) (map[string]interface{}, error) {
+	return r.Spec, nil
+}
+
+func (c installerBehavior) OptionForce(r *v1alpha1.HelmApp) bool {
+	return ReleaseOptionBool(r, OptionForce, false)
 }

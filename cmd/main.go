@@ -75,32 +75,26 @@ func main() {
 	logger.Printf("watching ApiVersion: %s, Kind: %s, Namespace: %s", option.OptionAPIVersion, option.OptionCRDKind, option.OptionNamespace)
 	sdk.Watch(option.OptionAPIVersion, option.OptionCRDKind, option.OptionNamespace, option.OptionResyncPeriod)
 	sdk.Handle(&handler{
-		helmext.NewInstaller(storageBackend, kubeClient, option.OptionChart),
-		clientset,
+		helmext.NewInstallerWithBehavior(storageBackend, kubeClient, option.OptionChart, installerBehavior{clientset}),
 	})
 	sdk.Run(context.TODO())
 }
 
 type handler struct {
 	controller helmext.Installer
-	clientset  internalclientset.Interface
 }
 
 var lastResourceVersion string
 
 func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
-	switch raw := event.Object.(type) {
+	switch o := event.Object.(type) {
 	case *v1alpha1.HelmApp:
-		o, err := decorateResource(raw, h.clientset)
-		if err != nil {
-			logger.Fatalf(err.Error())
-			return err
-		}
 		if o.GetResourceVersion() == lastResourceVersion {
 			// skipping because resource version has not changed
 			return nil
 		}
-		logger.Printf("processing %s", strings.Join([]string{raw.GetNamespace(), raw.GetName()}, "/"))
+
+		logger.Printf("processing %s", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
 
 		if event.Deleted {
 			_, err := h.controller.UninstallRelease(o)
@@ -122,10 +116,18 @@ func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 	return nil
 }
 
-func decorateResource(raw *v1alpha1.HelmApp, clientset internalclientset.Interface) (*v1alpha1.HelmApp, error) {
+type installerBehavior struct {
+	clientset internalclientset.Interface
+}
+
+func (c installerBehavior) ReleaseName(r *v1alpha1.HelmApp) string {
+	return helmext.ReleaseName(r)
+}
+
+func (c installerBehavior) ReleaseValues(raw *v1alpha1.HelmApp) (map[string]interface{}, error) {
+	clientset := c.clientset
 	namespace, name := raw.GetNamespace(), raw.GetName()
 	valueYamls := [][]byte{}
-
 	if cfgmap, err := clientset.Core().ConfigMaps(namespace).Get(name, metav1.GetOptions{}); err == nil {
 		for _, key := range []string{"values.yaml", "values"} {
 			if valueYaml, ok := cfgmap.Data[key]; ok {
@@ -145,25 +147,11 @@ func decorateResource(raw *v1alpha1.HelmApp, clientset internalclientset.Interfa
 		return nil, err
 	}
 
-	values, err := option.DecorateValues(raw.Spec, valueYamls)
-	if err != nil {
-		return nil, err
-	}
-	ret := &v1alpha1.HelmApp{
-		TypeMeta:   raw.TypeMeta,
-		ObjectMeta: raw.ObjectMeta,
-		Spec:       values,
-		Status:     raw.Status,
-	}
-	annotations := map[string]string{}
-	for k, v := range ret.Annotations {
-		annotations[k] = v
-	}
-	if option.OptionForce {
-		annotations[helmext.OptionAnnotation(helmext.OptionForce)] = helmext.ReleaseOption(ret, helmext.OptionForce, "true")
-	}
-	ret.Annotations = annotations
-	return ret, nil
+	return option.DecorateValues(raw.Spec, valueYamls)
+}
+
+func (c installerBehavior) OptionForce(r *v1alpha1.HelmApp) bool {
+	return helmext.ReleaseOptionBool(r, helmext.OptionForce, option.OptionForce)
 }
 
 func initCRDResource() error {

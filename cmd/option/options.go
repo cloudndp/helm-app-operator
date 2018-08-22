@@ -92,7 +92,7 @@ func parseOptions() error {
 	flag.StringVar(&OptionUninstallResource, "uninstall", "", "uninstall crd resource")
 	flag.StringVar(&OptionChart, "chart", os.Getenv("HELM_CHART"), "chart dir")
 	flag.BoolVar(&OptionForce, "force", false, "upgrade with force option")
-	flag.BoolVar(&OptionAllNamespace, "all-namespace", false, "watch all namespace")
+	flag.BoolVar(&OptionAllNamespace, "all-namespaces", false, "watch all namespace")
 	flag.StringVar(&OptionNamespace, "namespace", watchNamespaceFromEnv(), "watch namespace. defaults to current namespace.")
 	flag.Var(&OptionValueFiles, "values", "specify values in a YAML file(can specify multiple)")
 	flag.Var(&OptionValueFiles, "f", "alias for --values")
@@ -261,14 +261,13 @@ func GetStorageBackend() (*storage.Storage, error) {
 		storageBackend = storage.Init(driver.NewMemory())
 	case storageConfigMap:
 		cfgmaps := driver.NewConfigMaps(clientset.Core().ConfigMaps(OptionTillerNamespace))
-		cfgmaps.Log = NewLogger("storage/driver").Printf
 		storageBackend = storage.Init(cfgmaps)
-		storageBackend.Log = NewLogger("storage").Printf
 	case storageSecret:
 		secrets := driver.NewSecrets(clientset.Core().Secrets(OptionTillerNamespace))
-		secrets.Log = NewLogger("storage/driver").Printf
 		storageBackend = storage.Init(secrets)
-		storageBackend.Log = NewLogger("storage").Printf
+	default:
+		logger.Printf("unknown storage option %s, fallback to memory", OptionStore)
+		storageBackend = storage.Init(driver.NewMemory())
 	}
 
 	if OptionMaxHistory > 0 {

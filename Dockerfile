@@ -11,4 +11,4 @@ ENV OPERATOR_NAME='helm-app-operator' \
     HELM_CHART='/chart'
 
 ENTRYPOINT [ "/usr/local/entrypoint.sh", "helm-app-operator" ]
-CMD [ "--tiller-storage=secret --all-namespaces" ]
+CMD [ "--tiller-storage=secret", "--all-namespaces" ]

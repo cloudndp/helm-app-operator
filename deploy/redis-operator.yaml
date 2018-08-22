@@ -25,6 +25,7 @@ metadata:
 data:
   init.sh: |
     helm-app-operator --init && helm-app-operator --install-once=redis && \
+    helm init --client-only && \
     rm -fr chart && helm fetch stable/redis --untar && mv redis chart
 
 ---
@@ -42,10 +43,12 @@ spec:
       labels:
         app: redis-operator
     spec:
+      # hostNetwork: true
       serviceAccountName: redis-operator
       containers:
         - name: operator
           image: xiaopal/helm-app-operator
+          # args: ["--all-namespaces"]
           env:
             - name: CRD_RESOURCE
               value: RedisApp,redisapps.xiaopal.github.com/v1beta1
