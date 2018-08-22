@@ -52,7 +52,7 @@ spec:
             - name: HELM_CHART
               value: /chart
             - name: OPERATOR_NAME
-              valueFrom: {fieldRef: {fieldPath: 'metadata.labels["app"]'}}
+              valueFrom: {fieldRef: {fieldPath: "metadata.labels['app']"}}
           volumeMounts:
             - mountPath: /etc/entrypoint.d
               name: entrypoint-init
