@@ -99,7 +99,7 @@ func parseOptions() error {
 	flag.StringVar(&OptionTillerNamespace, "tiller-namespace", tillerNamespaceFromEnv(), "tiller namespace. defaults to current namespace.")
 	flag.StringVar(&OptionStore, "tiller-storage", storageConfigMap, "storage driver to use. One of 'configmap', 'memory', or 'secret'")
 	flag.IntVar(&OptionMaxHistory, "tiller-history-max", historyMaxFromEnv(), "maximum number of releases kept in release history, with 0 meaning no limit")
-	flag.IntVar(&OptionResyncPeriod, "resync", 5, "resync period, default 5")
+	flag.IntVar(&OptionResyncPeriod, "resync", 0, "resync period, default 0")
 	flag.Parse()
 
 	if len(OptionCRD) == 0 {

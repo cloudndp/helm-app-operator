@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -84,33 +83,28 @@ type handler struct {
 	controller helmext.Installer
 }
 
-var lastResourceVersion string
-
 func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 	switch o := event.Object.(type) {
 	case *v1alpha1.HelmApp:
-		if o.GetResourceVersion() == lastResourceVersion && !event.Deleted {
-			// skipping because resource version has not changed
-			return nil
-		}
-		logger.Printf("processing %s", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
-
 		if event.Deleted {
+			logger.Printf("Uninstalling %s", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
 			_, err := h.controller.UninstallRelease(o)
+			if err != nil {
+				logger.Fatalf("failed to uninstall release: %v", err.Error())
+			}
 			return err
 		}
+		logger.Printf("Installing %s", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
 		updatedResource, err := h.controller.InstallRelease(o)
 		if err != nil {
-			logger.Fatalf(err.Error())
-			return fmt.Errorf("failed to install release: %v", err)
+			logger.Fatalf("failed to install release: %v", err.Error())
+			return err
 		}
-
 		err = sdk.Update(updatedResource)
 		if err != nil {
-			logger.Fatalf(err.Error())
-			return fmt.Errorf("failed to update custom resource status: %v", err)
+			logger.Fatalf("failed to update custom resource status: %v", err.Error())
+			return err
 		}
-		lastResourceVersion = o.GetResourceVersion()
 	}
 	return nil
 }
