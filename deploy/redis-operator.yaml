@@ -18,17 +18,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: redis-operator-init
-data:
-  init.sh: |
-    helm-app-operator --init && helm-app-operator --install-once=redis && \
-    helm init --client-only && \
-    rm -fr chart && helm fetch stable/redis --untar && mv redis chart
-
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -48,18 +37,16 @@ spec:
       containers:
         - name: operator
           image: xiaopal/helm-app-operator
-          # args: ["--all-namespaces"]
+          command: 
+            - /bin/bash
+            - -c
+            - helm-app-operator --init && 
+              helm-app-operator --install-once=redis &&
+              helm fetch stable/redis --untar && 
+              exec helm-app-operator --chart=/redis
           env:
             - name: CRD_RESOURCE
               value: RedisApp,redisapps.xiaopal.github.com/v1beta1
-            - name: HELM_CHART
-              value: /chart
             - name: OPERATOR_NAME
               valueFrom: {fieldRef: {fieldPath: "metadata.labels['app']"}}
-          volumeMounts:
-            - mountPath: /etc/entrypoint.d
-              name: entrypoint-init
-      volumes:
-        - name: entrypoint-init
-          configMap: {name: redis-operator-init}
 
