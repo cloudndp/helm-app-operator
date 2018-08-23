@@ -3,6 +3,7 @@ package helmext
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
@@ -27,6 +28,8 @@ import (
 const (
 	//OptionForce option force
 	OptionForce = "force"
+	//OptionChart option chart
+	OptionChart = "chart"
 )
 
 // Installer can install and uninstall Helm releases given a custom resource
@@ -40,36 +43,23 @@ type installer struct {
 	storageBackend   *storage.Storage
 	tillerKubeClient *kube.Client
 	chartPath        string
-	behavior         InstallerBehavior
+	behavior         *behaviorWrapper
 }
 
 // NewInstaller returns a new Helm installer capable of installing and uninstalling releases.
 func NewInstaller(storageBackend *storage.Storage, tillerKubeClient *kube.Client, chartPath string) Installer {
-	return NewInstallerWithBehavior(storageBackend, tillerKubeClient, chartPath, installerBehavior{})
+	return NewInstallerWithBehavior(storageBackend, tillerKubeClient, chartPath, nil)
 }
 
 // NewInstallerWithBehavior returns a new Helm installer capable of installing and uninstalling releases.
-func NewInstallerWithBehavior(storageBackend *storage.Storage, tillerKubeClient *kube.Client, chartPath string, behavior InstallerBehavior) Installer {
-	return installer{storageBackend, tillerKubeClient, chartPath, behavior}
+func NewInstallerWithBehavior(storageBackend *storage.Storage, tillerKubeClient *kube.Client, chartPath string, behavior interface{}) Installer {
+	return installer{storageBackend, tillerKubeClient, chartPath, &behaviorWrapper{behavior}}
 }
 
 // InstallRelease accepts a custom resource, installs a Helm release using Tiller,
 // and returns the custom resource with updated `status`.
 func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error) {
-	values, err := c.behavior.ReleaseValues(r)
-	if err != nil {
-		return r, err
-	}
-	cr, err := yaml.Marshal(values)
-	if err != nil {
-		return r, err
-	}
-
-	chart, err := chartutil.Load(c.chartPath)
-	if err != nil {
-		return r, err
-	}
-
+	chart, cr, err := c.behavior.LoadChart(r, c.chartPath)
 	var updatedRelease *release.Release
 	latestRelease, err := c.storageBackend.Last(c.behavior.ReleaseName(r))
 
@@ -196,23 +186,69 @@ func ReleaseName(r *v1alpha1.HelmApp) string {
 	return fmt.Sprintf("%s-%s", OperatorName(), r.GetName())
 }
 
-//InstallerBehavior installer customized behavior
-type InstallerBehavior interface {
+//BehaviorReleaseName customize release name
+type BehaviorReleaseName interface {
 	ReleaseName(r *v1alpha1.HelmApp) string
+}
+
+//BehaviorReleaseValues customize release name
+type BehaviorReleaseValues interface {
 	ReleaseValues(r *v1alpha1.HelmApp) (map[string]interface{}, error)
+}
+
+//BehaviorOptionForce customize release force option
+type BehaviorOptionForce interface {
 	OptionForce(r *v1alpha1.HelmApp) bool
 }
 
-type installerBehavior struct{}
+type behaviorWrapper struct {
+	behavior interface{}
+}
 
-func (c installerBehavior) ReleaseName(r *v1alpha1.HelmApp) string {
+func (b *behaviorWrapper) ReleaseName(r *v1alpha1.HelmApp) string {
+	if behavior, ok := b.behavior.(BehaviorReleaseName); ok {
+		return behavior.ReleaseName(r)
+	}
 	return ReleaseName(r)
 }
 
-func (c installerBehavior) ReleaseValues(r *v1alpha1.HelmApp) (map[string]interface{}, error) {
+func (b *behaviorWrapper) ReleaseValues(r *v1alpha1.HelmApp) (map[string]interface{}, error) {
+	if behavior, ok := b.behavior.(BehaviorReleaseValues); ok {
+		return behavior.ReleaseValues(r)
+	}
 	return r.Spec, nil
 }
 
-func (c installerBehavior) OptionForce(r *v1alpha1.HelmApp) bool {
+func (b *behaviorWrapper) OptionForce(r *v1alpha1.HelmApp) bool {
+	if behavior, ok := b.behavior.(BehaviorOptionForce); ok {
+		return behavior.OptionForce(r)
+	}
 	return ReleaseOptionBool(r, OptionForce, false)
+}
+
+func (b *behaviorWrapper) TranslateChartPath(r *v1alpha1.HelmApp, chartPath string) string {
+	chart := ReleaseOption(r, OptionChart, "")
+	if chart == "" {
+		return chartPath
+	}
+	if filepath.IsAbs(chart) {
+		return chart
+	}
+	return filepath.Join(chartPath, chart)
+}
+
+func (b *behaviorWrapper) LoadChart(r *v1alpha1.HelmApp, chartPath string) (*cpb.Chart, []byte, error) {
+	values, err := b.ReleaseValues(r)
+	if err != nil {
+		return nil, nil, err
+	}
+	valueYaml, err := yaml.Marshal(values)
+	if err != nil {
+		return nil, nil, err
+	}
+	chart, err := chartutil.Load(b.TranslateChartPath(r, chartPath))
+	if err != nil {
+		return nil, nil, err
+	}
+	return chart, valueYaml, nil
 }
