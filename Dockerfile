@@ -1,12 +1,13 @@
 FROM golang:1.10 as build
 ADD . /go/src/github.com/xiaopal/helm-app-operator
 WORKDIR  /go/src/github.com/xiaopal/helm-app-operator
-RUN CGO_ENABLED=0 GOOS=linux go build -o /helm-app-operator -ldflags '-s -w' cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o /helm-app-operator -ldflags '-s -w' cmd/*.go
 RUN chmod +x /helm-app-operator
 
 FROM alpine:3.7
 
-ARG HELM_STABLE_REPO_URL=https://kubernetes-charts.storage.googleapis.com
+# https://kubernetes-charts.storage.googleapis.com
+ARG HELM_STABLE_REPO_URL=https://npc.nos-eastchina1.126.net/charts/stable
 
 RUN apk add --no-cache bash coreutils curl openssh-client openssl git findutils && \
 	curl -sSL 'http://npc.nos-eastchina1.126.net/dl/jq_1.5_linux_amd64.tar.gz' | tar -zx -C /usr/local/bin && \
@@ -22,6 +23,6 @@ RUN ln -s /helm-app-operator /usr/local/bin/helm-app-operator
 
 ENV OPERATOR_NAME='helm-app-operator' \
     CRD_RESOURCE='HelmApp,helmapps.xiaopal.github.com/v1beta1' \
-    HELM_CHART='/chart'
+    HELM_CHART=''
 ENTRYPOINT [ "/helm-app-operator" ]
 CMD [ "--tiller-storage=secret", "--all-namespaces" ]
