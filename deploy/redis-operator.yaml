@@ -40,8 +40,8 @@ spec:
           command: 
             - /bin/bash
             - -c
-            - helm-app-operator --init && 
-              helm-app-operator --install-once=redis &&
+            - helm-app-operator init && 
+              helm-app-operator install ---once redis &&
               helm fetch stable/redis --untar && 
               exec helm-app-operator --chart=/redis
           env:
