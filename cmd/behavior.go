@@ -44,3 +44,7 @@ func (c installerBehavior) ReleaseValues(raw *v1alpha1.HelmApp) (map[string]inte
 func (c installerBehavior) OptionForce(r *v1alpha1.HelmApp) bool {
 	return helmext.ReleaseOptionBool(r, helmext.OptionForce, option.OptionForce)
 }
+
+func (c installerBehavior) Logger(r *v1alpha1.HelmApp) func(string, ...interface{}) {
+	return option.NewLogger("tiller").Printf
+}

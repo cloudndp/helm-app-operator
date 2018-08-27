@@ -9,7 +9,6 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	yaml "gopkg.in/yaml.v2"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/engine"
 	"k8s.io/helm/pkg/kube"
@@ -22,7 +21,6 @@ import (
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 
 	"github.com/operator-framework/helm-app-operator-kit/helm-app-operator/pkg/apis/app/v1alpha1"
-	helm "github.com/operator-framework/helm-app-operator-kit/helm-app-operator/pkg/helm"
 )
 
 const (
@@ -63,7 +61,7 @@ func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error
 	var updatedRelease *release.Release
 	latestRelease, err := c.storageBackend.Last(c.behavior.ReleaseName(r))
 
-	tiller := tillerRendererForCR(r, c.storageBackend, c.tillerKubeClient)
+	tiller := c.tillerRendererForCR(r)
 	c.syncReleaseStatus(r.Status)
 
 	if err != nil || latestRelease == nil {
@@ -103,7 +101,7 @@ func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error
 // UninstallRelease accepts a custom resource, uninstalls the existing Helm release
 // using Tiller, and returns the custom resource with updated `status`.
 func (c installer) UninstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error) {
-	tiller := tillerRendererForCR(r, c.storageBackend, c.tillerKubeClient)
+	tiller := c.tillerRendererForCR(r)
 	_, err := tiller.UninstallRelease(context.TODO(), &services.UninstallReleaseRequest{
 		Name:  c.behavior.ReleaseName(r),
 		Purge: true,
@@ -128,25 +126,28 @@ func (c installer) syncReleaseStatus(status v1alpha1.HelmAppStatus) {
 
 // tillerRendererForCR creates a ReleaseServer configured with a rendering engine that adds ownerrefs to rendered assets
 // based on the CR.
-func tillerRendererForCR(r *v1alpha1.HelmApp, storageBackend *storage.Storage, tillerKubeClient *kube.Client) *tiller.ReleaseServer {
-	controllerRef := metav1.NewControllerRef(r, r.GroupVersionKind())
-	ownerRefs := []metav1.OwnerReference{
-		*controllerRef,
-	}
-	baseEngine := engine.New()
-	e := helm.NewOwnerRefEngine(baseEngine, ownerRefs)
+func (c installer) tillerRendererForCR(r *v1alpha1.HelmApp) *tiller.ReleaseServer {
+	// TODO: 已暂时移除 ownerRefs 处理，OwnerRefEngine 只能处理模板中仅单个对象场景
+	//controllerRef := metav1.NewControllerRef(r, r.GroupVersionKind())
+	//ownerRefs := []metav1.OwnerReference{
+	//	*controllerRef,
+	//}
+	//baseEngine := engine.New()
+	//e := helm.NewOwnerRefEngine(baseEngine, ownerRefs)
 	var ey environment.EngineYard = map[string]environment.Engine{
-		environment.GoTplEngine: e,
+		environment.GoTplEngine: /*e*/ engine.New(),
 	}
 	env := &environment.Environment{
 		EngineYard: ey,
-		Releases:   storageBackend,
-		KubeClient: tillerKubeClient,
+		Releases:   c.storageBackend,
+		KubeClient: c.tillerKubeClient,
 	}
 
 	internalClientSet, _ := internalclientset.NewForConfig(k8sclient.GetKubeConfig())
 
-	return tiller.NewReleaseServer(env, internalClientSet, false)
+	server := tiller.NewReleaseServer(env, internalClientSet, false)
+	server.Log = c.behavior.Logger(r)
+	return server
 }
 
 //ReleaseOptionBool release bool option
@@ -201,6 +202,11 @@ type BehaviorOptionForce interface {
 	OptionForce(r *v1alpha1.HelmApp) bool
 }
 
+//BehaviorLogger customize logger
+type BehaviorLogger interface {
+	Logger(r *v1alpha1.HelmApp) func(string, ...interface{})
+}
+
 type behaviorWrapper struct {
 	behavior interface{}
 }
@@ -251,4 +257,11 @@ func (b *behaviorWrapper) LoadChart(r *v1alpha1.HelmApp, chartPath string) (*cpb
 		return nil, nil, err
 	}
 	return chart, valueYaml, nil
+}
+
+func (b *behaviorWrapper) Logger(r *v1alpha1.HelmApp) func(string, ...interface{}) {
+	if behavior, ok := b.behavior.(BehaviorLogger); ok {
+		return behavior.Logger(r)
+	}
+	return func(string, ...interface{}) {}
 }

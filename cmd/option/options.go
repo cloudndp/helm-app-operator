@@ -301,6 +301,7 @@ func GetStorageBackend() (*storage.Storage, error) {
 	if OptionMaxHistory > 0 {
 		storageBackend.MaxHistory = OptionMaxHistory
 	}
+	storageBackend.Log = NewLogger("storage").Printf
 	return storageBackend, nil
 }
 
