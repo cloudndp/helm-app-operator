@@ -1,6 +1,11 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/xiaopal/helm-app-operator/cmd/option"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -47,4 +52,33 @@ func (c installerBehavior) OptionForce(r *v1alpha1.HelmApp) bool {
 
 func (c installerBehavior) Logger(r *v1alpha1.HelmApp) func(string, ...interface{}) {
 	return option.NewLogger("tiller").Printf
+}
+
+func (c installerBehavior) TranslateChartPath(r *v1alpha1.HelmApp, chartPath string) (string, error) {
+	chart, translated := helmext.ReleaseOption(r, helmext.OptionChart, ""), helmext.TranslateChartPath(r, chartPath)
+	if chart == "" {
+		return translated, nil
+	}
+	if strings.HasPrefix(chart, "http://") || strings.HasPrefix(chart, "https://") {
+		return fetchChart(r, chart)
+	}
+	if _, err := os.Stat(translated); !os.IsNotExist(err) {
+		return translated, nil
+	}
+	return fetchChart(r, chart)
+}
+
+func fetchChart(r *v1alpha1.HelmApp, chart string) (string, error) {
+	name, root := chart, os.ExpandEnv("$HOME/.charts")
+	if index := strings.LastIndex(name, "/"); index >= 0 {
+		name = strings.TrimSuffix(name[index+1:], ".tgz")
+	}
+	path := filepath.Join(root, fmt.Sprintf("%s.tgz", name))
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		fetchCmd := fmt.Sprintf("mkdir -p '%s' && helm fetch --destination '%s' '%s'", root, root, chart)
+		if err := execEvent(r, "chart", fetchCmd); err != nil {
+			return "", err
+		}
+	}
+	return path, nil
 }

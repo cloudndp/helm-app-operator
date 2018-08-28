@@ -36,7 +36,7 @@ func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 				return nil
 			}
 			logger.Printf("Uninstalling %s", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
-			if err := execHookCommand(o, "pre-uninstall"); err != nil {
+			if err := execHook(o, "pre-uninstall"); err != nil {
 				return err
 			}
 			updatedResource, err := h.controller.UninstallRelease(o)
@@ -56,7 +56,7 @@ func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 					return err
 				}
 			}
-			if err := execHookCommand(updatedResource, "post-uninstall"); err != nil {
+			if err := execHook(updatedResource, "post-uninstall"); err != nil {
 				return err
 			}
 			logger.Printf("%s uninstalled", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
@@ -70,7 +70,7 @@ func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 			return nil
 		}
 		logger.Printf("Installing %s", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
-		if err := execHookCommand(o, "pre-install"); err != nil {
+		if err := execHook(o, "pre-install"); err != nil {
 			return err
 		}
 		updatedResource, err := h.controller.InstallRelease(o)
@@ -86,7 +86,7 @@ func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 			logger.Printf("failed to update custom resource status: %v", err.Error())
 			return err
 		}
-		if err := execHookCommand(updatedResource, "post-install"); err != nil {
+		if err := execHook(updatedResource, "post-install"); err != nil {
 			return err
 		}
 		logger.Printf("%s updated", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))

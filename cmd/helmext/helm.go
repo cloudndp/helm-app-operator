@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/operator-framework/helm-app-operator-kit/helm-app-operator/pkg/apis/app/v1alpha1"
 	"github.com/operator-framework/operator-sdk/pkg/k8sclient"
 	"github.com/operator-framework/operator-sdk/pkg/util/k8sutil"
 	yaml "gopkg.in/yaml.v2"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/helm/pkg/chartutil"
 	"k8s.io/helm/pkg/engine"
 	"k8s.io/helm/pkg/kube"
@@ -19,8 +21,6 @@ import (
 	"k8s.io/helm/pkg/tiller"
 	"k8s.io/helm/pkg/tiller/environment"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-
-	"github.com/operator-framework/helm-app-operator-kit/helm-app-operator/pkg/apis/app/v1alpha1"
 )
 
 const (
@@ -132,13 +132,7 @@ func (c installer) syncReleaseStatus(status v1alpha1.HelmAppStatus) {
 // tillerRendererForCR creates a ReleaseServer configured with a rendering engine that adds ownerrefs to rendered assets
 // based on the CR.
 func (c installer) tillerRendererForCR(r *v1alpha1.HelmApp) *tiller.ReleaseServer {
-	// TODO: 已暂时移除 ownerRefs 处理，OwnerRefEngine 只能处理模板中仅单个对象场景
-	//controllerRef := metav1.NewControllerRef(r, r.GroupVersionKind())
-	//ownerRefs := []metav1.OwnerReference{
-	//	*controllerRef,
-	//}
-	//baseEngine := engine.New()
-	//e := helm.NewOwnerRefEngine(baseEngine, ownerRefs)
+	// 移除 ownerRefs 处理，OwnerRefEngine 只能处理模板中仅单个对象场景
 	var ey environment.EngineYard = map[string]environment.Engine{
 		environment.GoTplEngine: /*e*/ engine.New(),
 	}
@@ -192,6 +186,18 @@ func ReleaseName(r *v1alpha1.HelmApp) string {
 	return ReleaseOption(r, OptionRelease, fmt.Sprintf("%s-%s", OperatorName(), r.GetName()))
 }
 
+// TranslateChartPath loading chart path
+func TranslateChartPath(r *v1alpha1.HelmApp, chartPath string) string {
+	chart := ReleaseOption(r, OptionChart, "")
+	if chart == "" {
+		return chartPath
+	}
+	if filepath.IsAbs(chart) {
+		return chart
+	}
+	return filepath.Join(chartPath, chart)
+}
+
 //BehaviorReleaseName customize release name
 type BehaviorReleaseName interface {
 	ReleaseName(r *v1alpha1.HelmApp) string
@@ -210,6 +216,11 @@ type BehaviorOptionForce interface {
 //BehaviorLogger customize logger
 type BehaviorLogger interface {
 	Logger(r *v1alpha1.HelmApp) func(string, ...interface{})
+}
+
+//BehaviorChartPath customize load chart
+type BehaviorChartPath interface {
+	TranslateChartPath(r *v1alpha1.HelmApp, chartPath string) (string, error)
 }
 
 func (c installer) ReleaseName(r *v1alpha1.HelmApp) string {
@@ -233,15 +244,11 @@ func (c installer) OptionForce(r *v1alpha1.HelmApp) bool {
 	return ReleaseOptionBool(r, OptionForce, false)
 }
 
-func (c installer) translateChartPath(r *v1alpha1.HelmApp, chartPath string) string {
-	chart := ReleaseOption(r, OptionChart, "")
-	if chart == "" {
-		return chartPath
+func (c installer) TranslateChartPath(r *v1alpha1.HelmApp, chartPath string) (string, error) {
+	if behavior, ok := c.behavior.(BehaviorChartPath); ok {
+		return behavior.TranslateChartPath(r, chartPath)
 	}
-	if filepath.IsAbs(chart) {
-		return chart
-	}
-	return filepath.Join(chartPath, chart)
+	return TranslateChartPath(r, chartPath), nil
 }
 
 func (c installer) LoadChart(r *v1alpha1.HelmApp, chartPath string) (*cpb.Chart, []byte, error) {
@@ -249,11 +256,31 @@ func (c installer) LoadChart(r *v1alpha1.HelmApp, chartPath string) (*cpb.Chart,
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// enable .Values.global.ownerReferences
+	global := map[string]interface{}{
+		"ownerReferences": []metav1.OwnerReference{*metav1.NewControllerRef(r, r.GroupVersionKind())},
+	}
+	if g, ok := values["global"]; ok {
+		if gr, ok := g.(map[string]interface{}); ok {
+			for k, v := range gr {
+				global[k] = v
+			}
+		}
+	}
+	values["global"] = global
+
 	valueYaml, err := yaml.Marshal(values)
 	if err != nil {
 		return nil, nil, err
 	}
-	chart, err := chartutil.Load(c.translateChartPath(r, chartPath))
+
+	chartPath, err = c.TranslateChartPath(r, chartPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	chart, err := chartutil.Load(chartPath)
 	if err != nil {
 		return nil, nil, err
 	}

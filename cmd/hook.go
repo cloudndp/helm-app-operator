@@ -14,7 +14,7 @@ import (
 	"github.com/xiaopal/helm-app-operator/cmd/helmext"
 )
 
-func execHookCommand(r *v1alpha1.HelmApp, hook string) error {
+func execHook(r *v1alpha1.HelmApp, hook string) error {
 	script := helmext.ReleaseOption(r, hook, "")
 	if len(script) == 0 {
 		return nil
@@ -23,9 +23,13 @@ func execHookCommand(r *v1alpha1.HelmApp, hook string) error {
 		logger.Println("skipped, hooks disabled")
 		return nil
 	}
+	return execEvent(r, hook, script)
+}
+
+func execEvent(r *v1alpha1.HelmApp, event string, script string) error {
 	cmd := exec.Command("/bin/bash", "-c", script)
 	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("EVENT_TYPE=%s", hook),
+		fmt.Sprintf("EVENT_TYPE=%s", event),
 		fmt.Sprintf("EVENT_API_VERSION=%s", option.OptionAPIVersion),
 		fmt.Sprintf("EVENT_KIND=%s", option.OptionCRDKind),
 		fmt.Sprintf("EVENT_NAMESPACE=%s", r.GetNamespace()),
@@ -33,7 +37,7 @@ func execHookCommand(r *v1alpha1.HelmApp, hook string) error {
 		fmt.Sprintf("EVENT_RESOURCE=%s", r.GetName()),
 		fmt.Sprintf("EVENT_RELEASE=%s", helmext.ReleaseName(r)),
 	)
-	logger := option.NewLogger(hook)
+	logger := option.NewLogger(event)
 	if err := pipeCmd(cmd, logger); err != nil {
 		logger.Printf("failed to setup command: %v", err.Error())
 		return err
