@@ -37,13 +37,16 @@ const (
 type Installer interface {
 	InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error)
 	UninstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error)
+	ReleaseName(r *v1alpha1.HelmApp) string
+	ReleaseValues(r *v1alpha1.HelmApp) (map[string]interface{}, error)
+	Logger(r *v1alpha1.HelmApp) func(string, ...interface{})
 }
 
 type installer struct {
 	storageBackend   *storage.Storage
 	tillerKubeClient *kube.Client
 	chartPath        string
-	behavior         *behaviorWrapper
+	behavior         interface{}
 }
 
 // NewInstaller returns a new Helm installer capable of installing and uninstalling releases.
@@ -53,15 +56,15 @@ func NewInstaller(storageBackend *storage.Storage, tillerKubeClient *kube.Client
 
 // NewInstallerWithBehavior returns a new Helm installer capable of installing and uninstalling releases.
 func NewInstallerWithBehavior(storageBackend *storage.Storage, tillerKubeClient *kube.Client, chartPath string, behavior interface{}) Installer {
-	return installer{storageBackend, tillerKubeClient, chartPath, &behaviorWrapper{behavior}}
+	return installer{storageBackend, tillerKubeClient, chartPath, behavior}
 }
 
 // InstallRelease accepts a custom resource, installs a Helm release using Tiller,
 // and returns the custom resource with updated `status`.
 func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error) {
-	chart, cr, err := c.behavior.LoadChart(r, c.chartPath)
+	chart, cr, err := c.LoadChart(r, c.chartPath)
 	var updatedRelease *release.Release
-	latestRelease, err := c.storageBackend.Last(c.behavior.ReleaseName(r))
+	latestRelease, err := c.storageBackend.Last(c.ReleaseName(r))
 
 	tiller := c.tillerRendererForCR(r)
 	c.syncReleaseStatus(r.Status)
@@ -69,10 +72,10 @@ func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error
 	if err != nil || latestRelease == nil {
 		installReq := &services.InstallReleaseRequest{
 			Namespace: r.GetNamespace(),
-			Name:      c.behavior.ReleaseName(r),
+			Name:      c.ReleaseName(r),
 			Chart:     chart,
 			Values:    &cpb.Config{Raw: string(cr)},
-			ReuseName: c.behavior.OptionForce(r),
+			ReuseName: c.OptionForce(r),
 		}
 		releaseResponse, err := tiller.InstallRelease(context.TODO(), installReq)
 		if err != nil {
@@ -81,10 +84,10 @@ func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error
 		updatedRelease = releaseResponse.GetRelease()
 	} else {
 		updateReq := &services.UpdateReleaseRequest{
-			Name:   c.behavior.ReleaseName(r),
+			Name:   c.ReleaseName(r),
 			Chart:  chart,
 			Values: &cpb.Config{Raw: string(cr)},
-			Force:  c.behavior.OptionForce(r),
+			Force:  c.OptionForce(r),
 		}
 		releaseResponse, err := tiller.UpdateRelease(context.TODO(), updateReq)
 		if err != nil {
@@ -105,7 +108,7 @@ func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error
 func (c installer) UninstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error) {
 	tiller := c.tillerRendererForCR(r)
 	_, err := tiller.UninstallRelease(context.TODO(), &services.UninstallReleaseRequest{
-		Name:  c.behavior.ReleaseName(r),
+		Name:  c.ReleaseName(r),
 		Purge: true,
 	})
 	if err != nil {
@@ -148,7 +151,7 @@ func (c installer) tillerRendererForCR(r *v1alpha1.HelmApp) *tiller.ReleaseServe
 	internalClientSet, _ := internalclientset.NewForConfig(k8sclient.GetKubeConfig())
 
 	server := tiller.NewReleaseServer(env, internalClientSet, false)
-	server.Log = c.behavior.Logger(r)
+	server.Log = c.Logger(r)
 	return server
 }
 
@@ -209,32 +212,28 @@ type BehaviorLogger interface {
 	Logger(r *v1alpha1.HelmApp) func(string, ...interface{})
 }
 
-type behaviorWrapper struct {
-	behavior interface{}
-}
-
-func (b *behaviorWrapper) ReleaseName(r *v1alpha1.HelmApp) string {
-	if behavior, ok := b.behavior.(BehaviorReleaseName); ok {
+func (c installer) ReleaseName(r *v1alpha1.HelmApp) string {
+	if behavior, ok := c.behavior.(BehaviorReleaseName); ok {
 		return behavior.ReleaseName(r)
 	}
 	return ReleaseName(r)
 }
 
-func (b *behaviorWrapper) ReleaseValues(r *v1alpha1.HelmApp) (map[string]interface{}, error) {
-	if behavior, ok := b.behavior.(BehaviorReleaseValues); ok {
+func (c installer) ReleaseValues(r *v1alpha1.HelmApp) (map[string]interface{}, error) {
+	if behavior, ok := c.behavior.(BehaviorReleaseValues); ok {
 		return behavior.ReleaseValues(r)
 	}
 	return r.Spec, nil
 }
 
-func (b *behaviorWrapper) OptionForce(r *v1alpha1.HelmApp) bool {
-	if behavior, ok := b.behavior.(BehaviorOptionForce); ok {
+func (c installer) OptionForce(r *v1alpha1.HelmApp) bool {
+	if behavior, ok := c.behavior.(BehaviorOptionForce); ok {
 		return behavior.OptionForce(r)
 	}
 	return ReleaseOptionBool(r, OptionForce, false)
 }
 
-func (b *behaviorWrapper) TranslateChartPath(r *v1alpha1.HelmApp, chartPath string) string {
+func (c installer) translateChartPath(r *v1alpha1.HelmApp, chartPath string) string {
 	chart := ReleaseOption(r, OptionChart, "")
 	if chart == "" {
 		return chartPath
@@ -245,8 +244,8 @@ func (b *behaviorWrapper) TranslateChartPath(r *v1alpha1.HelmApp, chartPath stri
 	return filepath.Join(chartPath, chart)
 }
 
-func (b *behaviorWrapper) LoadChart(r *v1alpha1.HelmApp, chartPath string) (*cpb.Chart, []byte, error) {
-	values, err := b.ReleaseValues(r)
+func (c installer) LoadChart(r *v1alpha1.HelmApp, chartPath string) (*cpb.Chart, []byte, error) {
+	values, err := c.ReleaseValues(r)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -254,15 +253,15 @@ func (b *behaviorWrapper) LoadChart(r *v1alpha1.HelmApp, chartPath string) (*cpb
 	if err != nil {
 		return nil, nil, err
 	}
-	chart, err := chartutil.Load(b.TranslateChartPath(r, chartPath))
+	chart, err := chartutil.Load(c.translateChartPath(r, chartPath))
 	if err != nil {
 		return nil, nil, err
 	}
 	return chart, valueYaml, nil
 }
 
-func (b *behaviorWrapper) Logger(r *v1alpha1.HelmApp) func(string, ...interface{}) {
-	if behavior, ok := b.behavior.(BehaviorLogger); ok {
+func (c installer) Logger(r *v1alpha1.HelmApp) func(string, ...interface{}) {
+	if behavior, ok := c.behavior.(BehaviorLogger); ok {
 		return behavior.Logger(r)
 	}
 	return func(string, ...interface{}) {}

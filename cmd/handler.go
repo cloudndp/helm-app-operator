@@ -62,7 +62,7 @@ func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 			logger.Printf("%s uninstalled", strings.Join([]string{o.GetNamespace(), o.GetName()}, "/"))
 			return nil
 		}
-		if updated, err := updateChecksum(o); err != nil {
+		if updated, err := h.updateChecksum(o); err != nil {
 			logger.Printf("failed to update checksum: %v", err.Error())
 			return err
 		} else if !updated {
@@ -94,7 +94,7 @@ func (h *handler) Handle(ctx context.Context, event sdk.Event) error {
 	return nil
 }
 
-func updateChecksum(r *v1alpha1.HelmApp) (bool, error) {
+func (h *handler) updateChecksum(r *v1alpha1.HelmApp) (bool, error) {
 	annoChecksum := helmext.OptionAnnotation("checksum")
 	annotations, lastChecksum := map[string]string{}, ""
 	for k, v := range r.GetAnnotations() {
@@ -104,12 +104,16 @@ func updateChecksum(r *v1alpha1.HelmApp) (bool, error) {
 			annotations[k] = v
 		}
 	}
+	values, err := h.controller.ReleaseValues(r)
+	if err != nil {
+		return false, err
+	}
 	bytes, err := json.Marshal([]interface{}{
 		r.GetName(),
 		r.GetNamespace(),
 		r.GetLabels(),
 		annotations,
-		r.Spec,
+		values,
 		r.GetDeletionTimestamp(),
 	})
 	if err != nil {
