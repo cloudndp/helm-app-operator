@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/xiaopal/helm-app-operator/cmd/option"
@@ -69,16 +68,19 @@ func (c installerBehavior) TranslateChartPath(r *v1alpha1.HelmApp, chartPath str
 }
 
 func fetchChart(r *v1alpha1.HelmApp, chart string) (string, error) {
-	name, root := chart, os.ExpandEnv("$HOME/.charts")
+	name := chart
 	if index := strings.LastIndex(name, "/"); index >= 0 {
 		name = strings.TrimSuffix(name[index+1:], ".tgz")
 	}
-	path := filepath.Join(root, fmt.Sprintf("%s.tgz", name))
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		fetchCmd := fmt.Sprintf("mkdir -p '%s' && helm fetch --destination '%s' '%s'", root, root, chart)
-		if err := execEvent(r, "chart", fetchCmd); err != nil {
-			return "", err
-		}
+	chartDir := fmt.Sprintf("%s/%s", os.ExpandEnv("$HOME/.charts"), name)
+	fetchCmd := fmt.Sprintf("declare CHART='%s' CHART_DIR='%s'; %s", chart, chartDir, `
+		[ -d "$CHART_DIR" ] || {
+			echo "fetching '$CHART' to $CHART_DIR..." 
+			mkdir -p "${CHART_DIR%/*}"
+			helm fetch --untar --destination "${CHART_DIR%/*}" "$CHART"
+		}`)
+	if err := execEvent(r, "chart", fetchCmd); err != nil {
+		return "", err
 	}
-	return path, nil
+	return chartDir, nil
 }
