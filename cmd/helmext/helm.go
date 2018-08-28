@@ -24,10 +24,12 @@ import (
 )
 
 const (
-	//OptionForce option force
-	OptionForce = "force"
 	//OptionChart option chart
 	OptionChart = "chart"
+	//OptionRelease option release
+	OptionRelease = "release"
+	//OptionForce option force
+	OptionForce = "force"
 )
 
 // Installer can install and uninstall Helm releases given a custom resource
@@ -184,7 +186,7 @@ func OperatorName() string {
 
 //ReleaseName release name
 func ReleaseName(r *v1alpha1.HelmApp) string {
-	return fmt.Sprintf("%s-%s", OperatorName(), r.GetName())
+	return ReleaseOption(r, OptionRelease, fmt.Sprintf("%s-%s", OperatorName(), r.GetName()))
 }
 
 //BehaviorReleaseName customize release name
