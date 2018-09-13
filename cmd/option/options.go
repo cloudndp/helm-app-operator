@@ -83,7 +83,10 @@ var (
 	//OptionResyncPeriod --resync option
 	OptionResyncPeriod int
 	//OptionHooks --hooks option
-	OptionHooks    bool
+	OptionHooks bool
+	//OptionFetchExec --fetch-exec option
+	OptionFetchExec string
+
 	optionContinue bool
 )
 
@@ -179,6 +182,8 @@ func parseOptions() error {
 	flagsOperator.StringVar(&OptionStore, "tiller-storage", storageConfigMap, "storage driver to use. One of 'configmap', 'memory', or 'secret'")
 	flagsOperator.IntVar(&OptionMaxHistory, "tiller-history-max", historyMaxFromEnv(), "maximum number of releases kept in release history, with 0 meaning no limit")
 	flagsOperator.IntVar(&OptionResyncPeriod, "resync", 0, "resync period, default 0")
+
+	flagsOperator.StringVar(&OptionFetchExec, "fetch-exec", os.Getenv("FETCH_CHART_EXEC"), "fetch chart command")
 
 	flagsInstall.StringVar(&OptionNamespace, "namespace", watchNamespaceFromEnv(), "install to namespace. defaults to current namespace.")
 	flagsInstall.BoolVar(&OptionInstallOnce, "once", false, "install crd resource if not exists")

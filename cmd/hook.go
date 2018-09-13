@@ -26,9 +26,9 @@ func execHook(r *v1alpha1.HelmApp, hook string) error {
 	return execEvent(r, hook, script)
 }
 
-func execEvent(r *v1alpha1.HelmApp, event string, script string) error {
+func execEvent(r *v1alpha1.HelmApp, event string, script string, envs ...string) error {
 	cmd := exec.Command("/bin/bash", "-c", script)
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append( append(os.Environ(), envs...),
 		fmt.Sprintf("EVENT_TYPE=%s", event),
 		fmt.Sprintf("EVENT_API_VERSION=%s", option.OptionAPIVersion),
 		fmt.Sprintf("EVENT_KIND=%s", option.OptionCRDKind),

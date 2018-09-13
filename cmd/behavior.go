@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/xiaopal/helm-app-operator/cmd/option"
@@ -54,33 +56,44 @@ func (c installerBehavior) Logger(r *v1alpha1.HelmApp) func(string, ...interface
 }
 
 func (c installerBehavior) TranslateChartPath(r *v1alpha1.HelmApp, chartPath string) (string, error) {
-	chart, translated := helmext.ReleaseOption(r, helmext.OptionChart, ""), helmext.TranslateChartPath(r, chartPath)
-	if chart == "" {
-		return translated, nil
-	}
+	chart, chartSrc := helmext.ReleaseOption(r, helmext.OptionChart, ""), ""
+
 	if strings.HasPrefix(chart, "http://") || strings.HasPrefix(chart, "https://") {
-		return fetchChart(r, chart)
+		uri, err := url.Parse(chart)
+		if err != nil {
+			return "", err
+		}
+		name := filepath.Base(uri.Path)
+		name = strings.TrimSuffix(name, ".tgz")
+		name = strings.TrimSuffix(name, ".tar.gz")
+		return fetchChart(r, chart, filepath.Join(chartPath, name), chart)
 	}
-	if _, err := os.Stat(translated); !os.IsNotExist(err) {
-		return translated, nil
+
+	if chart != "" {
+		if filepath.IsAbs(chart) {
+			chartPath = chart
+		} else {
+			chartPath = filepath.Join(chartPath, chart)
+			chartSrc = chart
+		}
 	}
-	return fetchChart(r, chart)
+	return fetchChart(r, chart, chartPath, chartSrc)
 }
 
-func fetchChart(r *v1alpha1.HelmApp, chart string) (string, error) {
-	name := chart
-	if index := strings.LastIndex(name, "/"); index >= 0 {
-		name = strings.TrimSuffix(name[index+1:], ".tgz")
+func fetchChart(r *v1alpha1.HelmApp, chart string, chartPath string, chartSrc string) (string, error) {
+	fetchAlways := strings.ToLower(helmext.ReleaseOption(r, "fetch", "")) == "always"
+	if _, err := os.Stat(chartPath); !os.IsNotExist(err) && !fetchAlways {
+		return chartPath, nil
 	}
-	chartDir := fmt.Sprintf("%s/%s", os.ExpandEnv("$HOME/.charts"), name)
-	fetchCmd := fmt.Sprintf("declare CHART='%s' CHART_DIR='%s'; %s", chart, chartDir, `
-		[ -d "$CHART_DIR" ] || {
-			echo "fetching '$CHART' to $CHART_DIR..." 
-			mkdir -p "${CHART_DIR%/*}"
-			helm fetch --untar --destination "${CHART_DIR%/*}" "$CHART"
-		}`)
-	if err := execEvent(r, "chart", fetchCmd); err != nil {
+	if option.OptionFetchExec == "" {
+		return "", fmt.Errorf("chart %s not exists and --fetch-exec not present", chartPath)
+	}
+	if err := execEvent(r, "chart", option.OptionFetchExec,
+		fmt.Sprintf("FETCH_CHART=%s", chart),
+		fmt.Sprintf("FETCH_CHART_TO=%s", chartPath),
+		fmt.Sprintf("FETCH_CHART_FROM=%s", chartSrc),
+	); err != nil {
 		return "", err
 	}
-	return chartDir, nil
+	return chartPath, nil
 }
