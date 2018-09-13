@@ -63,6 +63,10 @@ func NewInstallerWithBehavior(storageBackend *storage.Storage, tillerKubeClient 
 // and returns the custom resource with updated `status`.
 func (c installer) InstallRelease(r *v1alpha1.HelmApp) (*v1alpha1.HelmApp, error) {
 	chart, cr, err := c.LoadChart(r, c.chartPath)
+	if err != nil {
+		return r, err
+	}
+
 	var updatedRelease *release.Release
 	latestRelease, err := c.storageBackend.Last(c.ReleaseName(r))
 

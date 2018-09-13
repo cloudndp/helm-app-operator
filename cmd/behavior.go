@@ -57,20 +57,18 @@ func (c installerBehavior) Logger(r *v1alpha1.HelmApp) func(string, ...interface
 
 func (c installerBehavior) TranslateChartPath(r *v1alpha1.HelmApp, chartPath string) (string, error) {
 	chart, chartSrc := helmext.ReleaseOption(r, helmext.OptionChart, ""), ""
-
-	if strings.HasPrefix(chart, "http://") || strings.HasPrefix(chart, "https://") {
-		uri, err := url.Parse(chart)
-		if err != nil {
-			return "", err
-		}
-		name := filepath.Base(uri.Path)
-		name = strings.TrimSuffix(name, ".tgz")
-		name = strings.TrimSuffix(name, ".tar.gz")
-		return fetchChart(r, chart, filepath.Join(chartPath, name), chart)
-	}
-
 	if chart != "" {
-		if filepath.IsAbs(chart) {
+		if strings.HasPrefix(chart, "http://") || strings.HasPrefix(chart, "https://") {
+			uri, err := url.Parse(chart)
+			if err != nil {
+				return "", err
+			}
+			name := filepath.Base(uri.Path)
+			name = strings.TrimSuffix(name, ".tgz")
+			name = strings.TrimSuffix(name, ".tar.gz")
+			chartPath = filepath.Join(chartPath, name)
+			chartSrc = chart
+		} else if filepath.IsAbs(chart) {
 			chartPath = chart
 		} else {
 			chartPath = filepath.Join(chartPath, chart)

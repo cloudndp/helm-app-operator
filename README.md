@@ -102,7 +102,7 @@ spec:
 
 # build/test
 ```
-CGO_ENABLED=0 GOOS=linux go build -o bin/helm-app-operator -ldflags '-s -w' cmd/*.go                  
+CGO_ENABLED=0 GOOS=linux go build -o bin/helm-app-operator -ldflags '-s -w' cmd/*.go
 
 bin/helm-app-operator --crd Test,tests.xiaopal.github.com/v1 --kubeconfig ~/.kube/config init
 

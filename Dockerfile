@@ -23,6 +23,8 @@ RUN ln -s /helm-app-operator /usr/local/bin/helm-app-operator
 
 ENV OPERATOR_NAME='helm-app-operator' \
     CRD_RESOURCE='HelmApp,helmapps.xiaopal.github.com/v1beta1' \
-    HELM_CHART=''
+    HELM_CHART='' \
+	FETCH_CHART_EXEC='[ ! -z "$FETCH_CHART" ] && rm -fr "$FETCH_CHART_TO" && FETCH_TMP="$(mktemp -d)" && trap "rm -fr $FETCH_TMP" EXIT && mkdir -p "$(dirname "$FETCH_CHART_TO")" && helm fetch -d "$FETCH_TMP" --untar "$FETCH_CHART_FROM" && mv "$FETCH_TMP/"* "$FETCH_CHART_TO"'
+
 ENTRYPOINT [ "/helm-app-operator" ]
 CMD [ "--tiller-storage=secret", "--all-namespaces" ]
